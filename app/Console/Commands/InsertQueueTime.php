@@ -1,48 +1,62 @@
 <?php
 
-namespace App\Jobs;
+namespace App\Console\Commands;
 
-use DB;
+date_default_timezone_set('Asia/Taipei');
+
 use \Curl\Curl;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
+use DB;
+use App\Jobs\insertqueueJob;
+use Illuminate\Console\Command;
 
-class InsertQueueJob implements ShouldQueue
+class InsertQueueTime extends Command
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    protected $api_data;
     /**
-     * Create a new job instance.
+     * The name and signature of the console command.
+     *
+     * @var string
+     */
+    protected $signature = 'command:queueTime';
+
+    /**
+     * The console command description.
+     *
+     * @var string
+     */
+    protected $description = 'Command description';
+
+    /**
+     * Create a new command instance.
      *
      * @return void
      */
-    public function __construct($apiData)
+    public function __construct()
     {
-        $this->api_data = $apiData;
-        // dd($this->api_data);
+        parent::__construct();
     }
 
     /**
-     * Execute the job.
+     * Execute the console command.
      *
-     * @return void
+     * @return mixed
      */
     public function handle()
     {
+        $date = date("Y-m-d");
+        $time = date("H:i", mktime(date('H'), date('i') - 1));
+
         $curl = new Curl();
-        $curl->get($this->api_data);
+        $curl->get("http://train.rd6/?start={$date}T{$time}:00&end={$date}T{$time}:59&from=0");
+
         if ($curl->error) {
             echo 'Error: ' . $curl->errorCode . ': ' . $curl->errorMessage . "\n";
         } else {
             echo 'Response:' . "\n";
-            echo $this->api_data . "\n";
+            // var_dump($curl->response);
         }
 
         $data = json_decode($curl->response, true);
+
         foreach ($data['hits']['hits'] as $k => $v) {
             // $data['hits']['hits'][$k]['_source'] = json_encode($data['hits']['hits'][$k]['_source']);
             // $data['hits']['hits'][$k]['sort'] = json_encode($data['hits']['hits'][$k]['sort']);
@@ -57,18 +71,15 @@ class InsertQueueJob implements ShouldQueue
             $data['hits']['hits'][$k]['_source'] = $source;
             $data['hits']['hits'][$k]['sort'] = $sort;
         };
-        // dd(count($data['hits']['hits']));
 
-        $dataChunks = array_chunk($data['hits']['hits'], 1000);
+        $dataChunks = array_chunk($data['hits']['hits'], 1000, true);
         $count = 0;
         foreach ($dataChunks as $value) {
             $count += count($value);
-            DB::table('api10000s')->insert($value);
+            insertqueueJob::dispatch($value);
             echo $count . "\n";
         }
 
         $curl->close();
-
-        // DB::table('api10000s')->insert($this->api_data);
     }
 }
